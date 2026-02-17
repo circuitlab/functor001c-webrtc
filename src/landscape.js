@@ -109,7 +109,7 @@ function init() {
   if ( canvasElement ) {
     try {
       textureSender = new TextureSender();
-      textureSender.init( canvasElement, renderer, gpuCompute, positionVariable, WIDTH );
+      textureSender.init( canvasElement, renderer, gpuCompute, positionVariable, velocityVariable, WIDTH );
 
       const peer = new Peer(
         'functor001bboids', {
