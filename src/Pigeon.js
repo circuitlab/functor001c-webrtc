@@ -38,6 +38,9 @@ export class Pigeon {
         } else if ( type == 'ipad' ) {
           const event = new CustomEvent( "ipad", { detail: body } );
           document.dispatchEvent( event );
+        } else if ( type == 'emojicloud' ) {
+          const event = new CustomEvent( "emojicloud", { detail: body } );
+          document.dispatchEvent( event );
         }
 
         if ( type == 'clientOpen' ) {

@@ -4,7 +4,9 @@ import { OrbitControls } from "three/examples/jsm/Addons.js";
 import { Loader3DTiles, PointCloudColoring } from 'three-loader-3dtiles';
 
 import emojiFS from "./emojiFS.frag";
-import emojiVS from "./emojiVSreceiver.vert";
+import emojiVS from "./emojiVS.vert";
+
+import { Pigeon } from "./Pigeon.js";
 
 const canvasElement = document.getElementById( 'textureCanvas' );
 // Create a separate canvas for video processing to avoid conflicts
@@ -28,6 +30,9 @@ let birdUniforms;
 let videoTexture;
 let videoTextureNeedsUpdate = false;
 
+// ポジションテクスチャ用の変数
+let positionTexture;
+
 let tilesRuntime = null;
 const clock = new THREE.Clock();
 
@@ -36,6 +41,8 @@ const copyrightElement = document.querySelector( "#credit" );
 await librariesLoaded;
 
 init();
+
+const pigeon = new Pigeon( "wss://202.213.135.84:3001/pigeon/", "functor" );
 
 function init() {
 
@@ -241,6 +248,10 @@ function initBirds() {
 
   geometry.instanceCount = BIRD_COUNT;
 
+  // ポジションテクスチャの初期化（全ピクセル分の配列を準備）
+  // Float32Arrayを使用して、送信側と同じ形式でデータを保持
+  const positionData = new Float32Array( WIDTH * WIDTH * 4 );
+
   const material = new THREE.ShaderMaterial( {
     uniforms: {
       'tBirdAtlas': { value: atlasTexture },
@@ -258,9 +269,37 @@ function initBirds() {
 
   birdUniforms = material.uniforms;
 
+  // positionTexture を初期化して uniforms に設定
+  // FloatTypeを使用して、送信側のGPUComputeと同じ形式にする
+  positionTexture = new THREE.DataTexture( positionData, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType );
+  positionTexture.needsUpdate = true;
+  birdUniforms['texturePosition'].value = positionTexture;
+
   const birds = new THREE.Points( geometry, material );
   birds.frustumCulled = false;
   scene.add( birds );
+
+  document.addEventListener( "emojicloud", ( e ) => {
+    console.log( 'Received emojicloud data:', e.detail );
+
+    const { start, end, pixelbuffer } = e.detail;
+
+    // 送信側から通常の配列として受け取ったデータをFloat32Arrayに変換
+    const pixelArray = new Float32Array( pixelbuffer );
+
+    // 送信側から受け取ったデータをそのままテクスチャにコピー
+    const textureData = positionTexture.image.data;
+
+    // 受信した範囲のデータをテクスチャに直接コピー
+    // startとendはRGBA配列のインデックス(4の倍数)
+    for ( let i = 0; i < pixelArray.length; i++ ) {
+      textureData[start + i] = pixelArray[i];
+    }
+
+    positionTexture.needsUpdate = true;
+    console.log( 'Updated position texture from index', start, 'to', end, 'with', pixelArray.length, 'values' );
+
+  } );
 
   // 映像テクスチャの初期化
   if ( canvasElement ) {
