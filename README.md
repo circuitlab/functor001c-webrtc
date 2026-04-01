@@ -1,4 +1,4 @@
-# FUNCTOR 002
+# FUNCTOR 001c WebRTC
 
 **A FUNCTOR variant**
 
