@@ -4,7 +4,9 @@ import { OrbitControls } from "three/examples/jsm/Addons.js";
 import { Loader3DTiles, PointCloudColoring } from 'three-loader-3dtiles';
 
 import emojiFS from "./emojiFS.frag";
-import emojiVS from "./emojiVSreceiver.vert";
+import emojiVS from "./emojiVS.vert";
+
+import { Pigeon } from "./Pigeon.js";
 
 const canvasElement = document.getElementById( 'textureCanvas' );
 // Create a separate canvas for video processing to avoid conflicts
@@ -28,14 +30,27 @@ let birdUniforms;
 let videoTexture;
 let videoTextureNeedsUpdate = false;
 
+// ポジションテクスチャ用の変数
+let positionTexture;
+// ベロシティテクスチャ用の変数
+let velocityTexture;
+// ローカルで保持する位置とベロシティのデータ
+let localPositionData;
+let localVelocityData;
+
 let tilesRuntime = null;
 const clock = new THREE.Clock();
+
+// デルタタイムの追跡用
+let last = performance.now();
 
 const copyrightElement = document.querySelector( "#credit" );
 
 await librariesLoaded;
 
 init();
+
+const pigeon = new Pigeon( "wss://202.213.135.84:3001/pigeon/", "functor" );
 
 function init() {
 
@@ -241,6 +256,15 @@ function initBirds() {
 
   geometry.instanceCount = BIRD_COUNT;
 
+  // ポジションテクスチャの初期化（全ピクセル分の配列を準備）
+  // Float32Arrayを使用して、送信側と同じ形式でデータを保持
+  const positionData = new Float32Array( WIDTH * WIDTH * 4 );
+  const velocityData = new Float32Array( WIDTH * WIDTH * 4 );
+
+  // ローカルで保持するデータを初期化
+  localPositionData = new Float32Array( WIDTH * WIDTH * 4 );
+  localVelocityData = new Float32Array( WIDTH * WIDTH * 4 );
+
   const material = new THREE.ShaderMaterial( {
     uniforms: {
       'tBirdAtlas': { value: atlasTexture },
@@ -258,9 +282,48 @@ function initBirds() {
 
   birdUniforms = material.uniforms;
 
+  // positionTexture を初期化して uniforms に設定
+  // FloatTypeを使用して、送信側のGPUComputeと同じ形式にする
+  positionTexture = new THREE.DataTexture( positionData, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType );
+  positionTexture.needsUpdate = true;
+  birdUniforms['texturePosition'].value = positionTexture;
+
+  // velocityTexture を初期化して uniforms に設定
+  velocityTexture = new THREE.DataTexture( velocityData, WIDTH, WIDTH, THREE.RGBAFormat, THREE.FloatType );
+  velocityTexture.needsUpdate = true;
+  birdUniforms['textureVelocity'].value = velocityTexture;
+
   const birds = new THREE.Points( geometry, material );
   birds.frustumCulled = false;
   scene.add( birds );
+
+  document.addEventListener( "emojicloud", ( e ) => {
+    console.log( 'Received emojicloud data:', e.detail );
+
+    const { start, end, pixelbuffer, velocitybuffer } = e.detail;
+
+    // 送信側から通常の配列として受け取ったデータをFloat32Arrayに変換
+    const pixelArray = new Float32Array( pixelbuffer );
+
+    // 受信した範囲のデータをローカルデータとテクスチャに直接コピー
+    // startとendはRGBA配列のインデックス(4の倍数)
+    for ( let i = 0; i < pixelArray.length; i++ ) {
+      localPositionData[start + i] = pixelArray[i];
+      positionTexture.image.data[start + i] = pixelArray[i];
+    }
+
+    // ベロシティデータも同様に処理
+    if ( velocitybuffer ) {
+      const velocityArray = new Float32Array( velocitybuffer );
+      for ( let i = 0; i < velocityArray.length; i++ ) {
+        localVelocityData[start + i] = velocityArray[i];
+      }
+    }
+
+    positionTexture.needsUpdate = true;
+    console.log( 'Updated position texture from index', start, 'to', end, 'with', pixelArray.length, 'values' );
+
+  } );
 
   // 映像テクスチャの初期化
   if ( canvasElement ) {
@@ -311,6 +374,33 @@ function animate() {
 }
 
 function render() {
+  // デルタタイムを計算（送信側と同じロジック）
+  const now = performance.now();
+  let delta = ( now - last ) / 1000;
+  if ( delta > 1 ) delta = 1; // safety cap on large deltas
+  last = now;
+
+  // ベロシティに基づいて位置を更新
+  if ( localPositionData && localVelocityData ) {
+    const textureData = positionTexture.image.data;
+
+    for ( let i = 0; i < localPositionData.length; i += 4 ) {
+      // 送信側のシェーダーと同じロジック: position + velocity * delta * 15.0
+      localPositionData[i] += localVelocityData[i] * delta * 15.0;     // x
+      localPositionData[i + 1] += localVelocityData[i + 1] * delta * 15.0; // y
+      localPositionData[i + 2] += localVelocityData[i + 2] * delta * 15.0; // z
+      // w (alpha) はそのまま
+
+      // テクスチャデータに反映
+      textureData[i] = localPositionData[i];
+      textureData[i + 1] = localPositionData[i + 1];
+      textureData[i + 2] = localPositionData[i + 2];
+      textureData[i + 3] = localPositionData[i + 3];
+    }
+
+    positionTexture.needsUpdate = true;
+  }
+
   // 映像テクスチャの更新処理
   if ( videoTextureNeedsUpdate ) {
     videoTexture.needsUpdate = true;

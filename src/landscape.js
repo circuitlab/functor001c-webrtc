@@ -8,7 +8,7 @@ import { GPUComputationRenderer } from "three/examples/jsm/Addons.js";
 
 import { Loader3DTiles, PointCloudColoring } from 'three-loader-3dtiles';
 
-import { TextureVisualizer } from "./texture-visualizer.js";
+import { TextureSender } from "./texture-sender.js";
 
 import emojiFS from "./emojiFS.frag";
 import emojiVS from "./emojiVS.vert";
@@ -45,7 +45,7 @@ const clock = new THREE.Clock();
 
 const copyrightElement = document.querySelector( "#credit" );
 
-let textureVisualizer = null;
+let textureSender = null;
 const canvasElement = document.getElementById( 'textureCanvas' );
 
 await librariesLoaded;
@@ -108,8 +108,8 @@ function init() {
 
   if ( canvasElement ) {
     try {
-      textureVisualizer = new TextureVisualizer();
-      textureVisualizer.init( canvasElement, renderer, gpuCompute, positionVariable, WIDTH );
+      textureSender = new TextureSender();
+      textureSender.init( canvasElement, renderer, gpuCompute, positionVariable, velocityVariable, WIDTH );
 
       const peer = new Peer(
         'functor001bboids', {
@@ -432,8 +432,8 @@ function render() {
 
   gpuCompute.compute();
 
-  if ( textureVisualizer ) {
-    textureVisualizer.update();
+  if ( textureSender ) {
+    textureSender.update();
   }
 
   birdUniforms['texturePosition'].value = gpuCompute.getCurrentRenderTarget( positionVariable ).texture;
